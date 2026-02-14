@@ -2,9 +2,23 @@ import type { AppConfig } from './types';
 
 const { env } = process;
 
+function resolveToken(): { token: string; tokenType: 'private' | 'job' | 'oauth' } {
+  const gitlabToken = env.GITLAB_TOKEN && !env.GITLAB_TOKEN.startsWith('$') ? env.GITLAB_TOKEN : null;
+  if (gitlabToken) {
+    return { token: gitlabToken, tokenType: 'private' };
+  }
+  if (env.CI_JOB_TOKEN) {
+    return { token: env.CI_JOB_TOKEN, tokenType: 'job' };
+  }
+  return { token: '', tokenType: 'private' };
+}
+
+const { token, tokenType } = resolveToken();
+
 export const config: AppConfig = {
   gitlab: {
-    token: env.GITLAB_TOKEN || env.CI_JOB_TOKEN || '',
+    token,
+    tokenType,
     apiUrl: env.CI_API_V4_URL || env.GITLAB_API_URL || 'https://gitlab.com/api/v4',
     projectId: env.CI_PROJECT_ID || env.GITLAB_PROJECT_ID || '',
     projectPath: env.CI_PROJECT_PATH || '',

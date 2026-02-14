@@ -2,6 +2,7 @@ export interface GitLabAPIOptions {
   apiUrl: string;
   token: string;
   projectId: string;
+  tokenType?: 'private' | 'job' | 'oauth';
 }
 
 export interface MergeRequest {

@@ -14,11 +14,24 @@ export class GitLabAPI {
   private apiUrl: string;
   private token: string;
   private projectId: string;
+  private tokenType: 'private' | 'job' | 'oauth';
 
-  constructor({ apiUrl, token, projectId }: GitLabAPIOptions) {
+  constructor({ apiUrl, token, projectId, tokenType = 'private' }: GitLabAPIOptions) {
     this.apiUrl = apiUrl;
     this.token = token;
     this.projectId = projectId;
+    this.tokenType = tokenType;
+  }
+
+  private _authHeaders(): Record<string, string> {
+    switch (this.tokenType) {
+      case 'job':
+        return { 'JOB-TOKEN': this.token };
+      case 'oauth':
+        return { 'Authorization': `Bearer ${this.token}` };
+      default:
+        return { 'PRIVATE-TOKEN': this.token };
+    }
   }
 
   private _request<T>(method: string, path: string, body: Record<string, unknown> | null = null): Promise<T> {
@@ -33,7 +46,7 @@ export class GitLabAPI {
         port: url.port || undefined,
         path: url.pathname + url.search,
         headers: {
-          'Authorization': `Bearer ${this.token}`,
+          ...this._authHeaders(),
           'Content-Type': 'application/json',
         },
       };

@@ -1,5 +1,6 @@
 export interface GitLabConfig {
   token: string;
+  tokenType: 'private' | 'job' | 'oauth';
   apiUrl: string;
   projectId: string;
   projectPath: string;

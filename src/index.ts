@@ -44,6 +44,7 @@ export async function runMergeRequestReview(): Promise<ReviewResult> {
     apiUrl: config.gitlab.apiUrl,
     token: config.gitlab.token,
     projectId: config.gitlab.projectId,
+    tokenType: config.gitlab.tokenType,
   });
 
   const reviewer = new Reviewer({
@@ -55,7 +56,7 @@ export async function runMergeRequestReview(): Promise<ReviewResult> {
   console.log(`API URL:    ${config.gitlab.apiUrl}`);
   console.log(`Project ID: ${config.gitlab.projectId}`);
   console.log(`MR IID:     !${mrIid}`);
-  console.log(`Token:      ${config.gitlab.token ? config.gitlab.token.slice(0, 4) + '****' : '(empty)'}`);
+  console.log(`Token:      ${config.gitlab.token ? config.gitlab.token.slice(0, 4) + '****' : '(empty)'} (${config.gitlab.tokenType})`);
 
   const [mr, changes] = await Promise.all([
     gitlab.getMergeRequest(mrIid),
