@@ -10,23 +10,24 @@ Uses the Gemini CLI `/code-review` command to analyze code changes on your curre
 
 This package uses a **cascading review strategy**:
 
-1. **Gemini CLI `/code-review` extension** (preferred) - The extension runs `git diff -U5 --merge-base origin/HEAD` internally and analyzes changes using its built-in Principal Software Engineer prompt with severity classifications (CRITICAL, HIGH, MEDIUM, LOW)
-2. **Gemini CLI with direct prompt** - Falls back to passing the diff directly to `gemini -p`
-3. **Gemini REST API** - Final fallback calling the Gemini API directly if CLI is unavailable
+1. **Gemini REST API** (preferred) — Calls the Gemini API directly with a structured prompt for reliable, formatted output
+2. **Gemini CLI `/code-review` extension** — Falls back to the CLI extension which runs `git diff` internally
+3. **Gemini CLI with direct prompt** — Final fallback passing the diff directly to `gemini -p`
 
 The extension is auto-installed if Gemini CLI is available but the extension is not yet present.
 
 ## Features
 
-- Uses Gemini CLI `/code-review` extension for best-in-class analysis
-- Auto-installs the code-review extension when Gemini CLI is available
-- Cascading fallback strategy (extension -> CLI prompt -> REST API)
-- Posts structured review as GitLab MR note
-- Automatic cleanup of previous review comments
+- **Inline diff comments** — Findings are posted directly on the changed lines in the MR diff
+- **Severity-based emojis** — :rotating_light: CRITICAL, :warning: HIGH, :large_blue_circle: MEDIUM, :information_source: LOW
+- **GitLab suggestion blocks** — One-click "Apply suggestion" for each code fix
+- **Rationale explanations** — Each suggestion includes why the change is recommended
+- Cascading fallback strategy (REST API -> CLI extension -> CLI prompt)
+- Auto-installs the Gemini CLI code-review extension when available
+- Automatic cleanup of previous review comments on re-review
 - Configurable file filtering (include/exclude patterns)
 - Diff size limits to manage token usage
 - Optional pipeline failure on CRITICAL findings
-- Publishable as GitLab NPM package
 
 ## Quick Start
 
@@ -144,40 +145,32 @@ niteni --help
 
 ## Review Output
 
-The `/code-review` extension produces structured output with severity classifications:
+Findings are posted as **inline diff comments** directly on the changed lines. Each comment includes:
 
-- **CRITICAL** - Security vulnerabilities, data loss, logic failures
-- **HIGH** - Performance bottlenecks, architectural violations, functional bugs
-- **MEDIUM** - Input validation gaps, error handling issues
-- **LOW** - Documentation, minor readability issues
+- Severity badge with emoji
+- Issue description
+- Suggestion with rationale explanation
+- GitLab "Apply suggestion" button for one-click fixes
 
-Example MR note:
+### Severity Levels
 
-```markdown
-## Niteni - Code Review
+- :rotating_light: **CRITICAL** — Security vulnerabilities, data loss, logic failures
+- :warning: **HIGH** — Performance bottlenecks, architectural violations, functional bugs
+- :large_blue_circle: **MEDIUM** — Input validation gaps, error handling issues
+- :information_source: **LOW** — Documentation, minor readability issues
 
-### Summary
-Adds user authentication middleware with JWT token validation.
+### Example Inline Comment
 
-### Findings
-
-**[HIGH]** `src/auth.js:42`
-> Missing token expiration check allows indefinite session reuse.
-```suggestion
-if (decoded.exp < Date.now() / 1000) {
-  throw new AuthError('Token expired');
-}
-```
-
-**[MEDIUM]** `src/auth.js:15`
-> Password comparison uses timing-unsafe equality operator.
-```suggestion
-const isValid = crypto.timingSafeEqual(
-  Buffer.from(hash),
-  Buffer.from(computedHash)
-);
-```
-```
+> #### :warning: HIGH — `src/auth.js:42`
+>
+> **Issue:** Missing token expiration check allows indefinite session reuse.
+>
+> **Suggestion:** Adding an expiration check prevents stolen tokens from being used indefinitely.
+> ```suggestion
+> if (decoded.exp < Date.now() / 1000) {
+>   throw new AuthError('Token expired');
+> }
+> ```
 
 ## Publishing to GitLab NPM Registry
 
