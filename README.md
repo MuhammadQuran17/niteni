@@ -231,7 +231,7 @@ Integrate "Niteni" — an AI-powered code review tool — into this GitLab repos
 
 1. Add a `niteni` job to `.gitlab-ci.yml` that runs on merge request events:
 
-   niteni:
+   niteni-code-review:
      stage: review
      image: node:20-alpine
      rules:
