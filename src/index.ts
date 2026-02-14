@@ -119,21 +119,12 @@ export async function runMergeRequestReview(): Promise<ReviewResult> {
     // Parse findings and post inline comments
     const findings = reviewer.parseFindings(reviewResult);
     const diffRefs = mr.diff_refs;
+    console.log(`Parsed ${findings.length} finding(s). diff_refs: ${diffRefs ? 'available' : 'missing'}`);
 
-    if (diffRefs && findings.length > 0) {
+    if (findings.length > 0) {
       let inlineCount = 0;
       for (const finding of findings) {
         if (!finding.file || finding.file === 'unknown' || !finding.line) continue;
-
-        const position: DiffPosition = {
-          base_sha: diffRefs.base_sha,
-          start_sha: diffRefs.start_sha,
-          head_sha: diffRefs.head_sha,
-          position_type: 'text',
-          new_path: finding.file,
-          old_path: finding.file,
-          new_line: finding.line,
-        };
 
         let body = `${REVIEW_HEADER}\n\n**[${finding.severity}]** \`${finding.file}:${finding.line}\`\n\n`;
 
@@ -148,14 +139,40 @@ export async function runMergeRequestReview(): Promise<ReviewResult> {
           body += `\n\`\`\`suggestion\n${finding.suggestion}\`\`\`\n`;
         }
 
-        try {
-          await gitlab.postMergeRequestDiscussion(mrIid, body, position);
-          inlineCount++;
-        } catch (err) {
-          console.warn(`Could not post inline comment for ${finding.file}:${finding.line}:`, (err as Error).message);
+        // Try inline diff comment first, fall back to general discussion
+        let posted = false;
+        if (diffRefs) {
+          const position: DiffPosition = {
+            base_sha: diffRefs.base_sha,
+            start_sha: diffRefs.start_sha,
+            head_sha: diffRefs.head_sha,
+            position_type: 'text',
+            new_path: finding.file,
+            old_path: finding.file,
+            new_line: finding.line,
+          };
+
+          try {
+            await gitlab.postMergeRequestDiscussion(mrIid, body, position);
+            posted = true;
+            inlineCount++;
+          } catch (err) {
+            console.warn(`Inline comment failed for ${finding.file}:${finding.line}: ${(err as Error).message}`);
+          }
+        }
+
+        // Fallback: post as general discussion without position
+        if (!posted) {
+          try {
+            await gitlab.postMergeRequestDiscussion(mrIid, body);
+            inlineCount++;
+            console.log(`Posted ${finding.file}:${finding.line} as general discussion (fallback).`);
+          } catch (err) {
+            console.warn(`Could not post discussion for ${finding.file}:${finding.line}:`, (err as Error).message);
+          }
         }
       }
-      console.log(`Posted ${inlineCount} inline comment(s).`);
+      console.log(`Posted ${inlineCount} comment(s).`);
     }
   }
 
