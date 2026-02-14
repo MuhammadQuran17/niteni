@@ -32,7 +32,7 @@ export class GitLabAPI {
         port: url.port || undefined,
         path: url.pathname + url.search,
         headers: {
-          'PRIVATE-TOKEN': this.token,
+          'Authorization': `Bearer ${this.token}`,
           'Content-Type': 'application/json',
         },
       };
