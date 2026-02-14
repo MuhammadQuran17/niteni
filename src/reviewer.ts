@@ -170,9 +170,12 @@ export class Reviewer {
 
     console.log('[Strategy 2] Running Gemini CLI with direct prompt...');
 
+    const tmpFile = path.join(os.tmpdir(), `niteni-review-${process.pid}-${Date.now()}.txt`);
+    fs.writeFileSync(tmpFile, `${REVIEW_PROMPT}\n\nHere is the diff to review:\n\n${diffContent}`, 'utf-8');
+
     try {
       const result = spawnSync('gemini', [
-        '-p', `${REVIEW_PROMPT}\n\nHere is the diff to review:\n\n${diffContent}`,
+        '-p', `@${tmpFile}`,
         '--sandbox',
       ], {
         env: {
@@ -202,10 +205,16 @@ export class Reviewer {
     } catch (err) {
       console.error('Gemini CLI prompt execution failed:', (err as Error).message);
       return null;
+    } finally {
+      try { fs.unlinkSync(tmpFile); } catch { /* ignore cleanup errors */ }
     }
   }
 
   async reviewWithAPI(diffContent: string): Promise<string> {
+    if (!/^[a-zA-Z0-9._-]+$/.test(this.model)) {
+      throw new Error(`Invalid model name: ${this.model}`);
+    }
+
     const body = JSON.stringify({
       systemInstruction: {
         parts: [{
@@ -226,12 +235,14 @@ export class Reviewer {
     return new Promise((resolve, reject) => {
       const req = https.request({
         hostname: 'generativelanguage.googleapis.com',
-        path: `/v1beta/models/${this.model}:generateContent?key=${this.geminiApiKey}`,
+        path: `/v1beta/models/${this.model}:generateContent`,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(body),
+          'x-goog-api-key': this.geminiApiKey,
         },
+        rejectUnauthorized: true,
       }, (res) => {
         let data = '';
         res.on('data', (chunk: string) => { data += chunk; });
@@ -334,12 +345,11 @@ export class Reviewer {
   }
 
   private matchPattern(filePath: string, pattern: string): boolean {
-    const regex = new RegExp(
-      '^' + pattern
-        .replace(/\./g, '\\.')
-        .replace(/\*/g, '.*')
-        .replace(/\?/g, '.') + '$'
-    );
+    const escaped = pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '.*')
+      .replace(/\?/g, '.');
+    const regex = new RegExp('^' + escaped + '$');
     return regex.test(filePath) || filePath.endsWith(pattern.replace(/^\*/, ''));
   }
 

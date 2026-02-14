@@ -19,7 +19,7 @@ npm run review:simulate    # Run simulation mode with mock data (needs ts-node)
 npm run simulate           # Run simulation from compiled output
 ```
 
-No test files exist yet. The test script expects `dist/**/*.test.js` using Node's built-in test runner (`node --test`).
+Tests use Node's built-in `node:test` and `node:assert` modules. Run `npm run build && npm test` to compile and execute tests from `dist/**/*.test.js`.
 
 ## Architecture
 

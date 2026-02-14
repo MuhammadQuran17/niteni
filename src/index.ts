@@ -1,7 +1,7 @@
 import { GitLabAPI } from './gitlab-api';
 import { Reviewer } from './reviewer';
 import { config, validate, validateForMR } from './config';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import type { ReviewResult, DiffPosition } from './types';
 
 // Re-export classes and functions
@@ -53,20 +53,10 @@ export async function runMergeRequestReview(): Promise<ReviewResult> {
   });
 
   const mrIid = config.gitlab.mrIid;
-  console.log(`API URL:    ${config.gitlab.apiUrl}`);
-  console.log(`Project ID: ${config.gitlab.projectId}`);
-  console.log(`MR IID:     !${mrIid}`);
-  console.log(`Token:      ${config.gitlab.token ? config.gitlab.token.slice(0, 4) + '****' : '(empty)'} (${config.gitlab.tokenType})`);
-  console.log(`GITLAB_TOKEN env: ${process.env.GITLAB_TOKEN ? process.env.GITLAB_TOKEN.slice(0, 8) + '****' : '(not set)'}`);
-
   const [mr, changes] = await Promise.all([
     gitlab.getMergeRequest(mrIid),
     gitlab.getMergeRequestChanges(mrIid),
   ]);
-
-  console.log(`MR Title: ${mr.title}`);
-  console.log(`Source: ${mr.source_branch} -> Target: ${mr.target_branch}`);
-  console.log(`Changes: ${changes.changes.length} file(s)`);
 
   let diffContent = '';
   for (const change of changes.changes) {
@@ -87,14 +77,7 @@ export async function runMergeRequestReview(): Promise<ReviewResult> {
     return { review: 'No reviewable changes found.', hasCritical: false };
   }
 
-  console.log(`Diff size: ${diffContent.length} characters`);
-  console.log('Running Gemini code review...');
-
   const reviewResult = await reviewer.review(diffContent);
-  console.log('Review completed.');
-  console.log('--- Review Output ---');
-  console.log(reviewResult);
-  console.log('--- End Review Output ---');
 
   if (config.review.postAsNote) {
     // Clean up previous inline discussions and notes
@@ -217,13 +200,13 @@ export async function runDiffReview(): Promise<ReviewResult> {
 
   let diffContent: string;
   try {
-    diffContent = execSync(
-      `git diff -U5 --merge-base origin/${targetBranch}`,
+    diffContent = execFileSync(
+      'git', ['diff', '-U5', '--merge-base', `origin/${targetBranch}`],
       { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }
     );
   } catch {
-    diffContent = execSync(
-      `git diff origin/${targetBranch}...HEAD`,
+    diffContent = execFileSync(
+      'git', ['diff', `origin/${targetBranch}...HEAD`],
       { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }
     );
   }

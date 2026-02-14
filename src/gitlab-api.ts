@@ -40,7 +40,11 @@ export class GitLabAPI {
       const url = new URL(`${this.apiUrl}/projects/${encodedProjectId}${path}`);
       const transport = url.protocol === 'https:' ? https : http;
 
-      const options: http.RequestOptions = {
+      if (url.protocol !== 'https:') {
+        console.warn('WARNING: Sending authenticated GitLab API request over unencrypted HTTP!');
+      }
+
+      const options: https.RequestOptions = {
         method,
         hostname: url.hostname,
         port: url.port || undefined,
@@ -49,6 +53,7 @@ export class GitLabAPI {
           ...this._authHeaders(),
           'Content-Type': 'application/json',
         },
+        rejectUnauthorized: true,
       };
 
       const req = transport.request(options, (res) => {
@@ -58,7 +63,8 @@ export class GitLabAPI {
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             resolve(data ? JSON.parse(data) : null);
           } else {
-            reject(new Error(`GitLab API ${method} ${path} failed (${res.statusCode}): ${data}`));
+            const truncated = data.length > 200 ? data.substring(0, 200) + '...' : data;
+            reject(new Error(`GitLab API ${method} ${path} failed (${res.statusCode}): ${truncated}`));
           }
         });
       });
@@ -70,19 +76,19 @@ export class GitLabAPI {
   }
 
   async getMergeRequest(mrIid: string): Promise<MergeRequest> {
-    return this._request<MergeRequest>('GET', `/merge_requests/${mrIid}`);
+    return this._request<MergeRequest>('GET', `/merge_requests/${encodeURIComponent(mrIid)}`);
   }
 
   async getMergeRequestChanges(mrIid: string): Promise<MergeRequestChanges> {
-    return this._request<MergeRequestChanges>('GET', `/merge_requests/${mrIid}/changes`);
+    return this._request<MergeRequestChanges>('GET', `/merge_requests/${encodeURIComponent(mrIid)}/changes`);
   }
 
   async getMergeRequestDiffs(mrIid: string): Promise<MergeRequestChange[]> {
-    return this._request<MergeRequestChange[]>('GET', `/merge_requests/${mrIid}/diffs`);
+    return this._request<MergeRequestChange[]>('GET', `/merge_requests/${encodeURIComponent(mrIid)}/diffs`);
   }
 
   async postMergeRequestNote(mrIid: string, body: string): Promise<MergeRequestNote> {
-    return this._request<MergeRequestNote>('POST', `/merge_requests/${mrIid}/notes`, { body });
+    return this._request<MergeRequestNote>('POST', `/merge_requests/${encodeURIComponent(mrIid)}/notes`, { body });
   }
 
   async postMergeRequestDiscussion(mrIid: string, body: string, position: DiffPosition | null = null): Promise<unknown> {
@@ -90,31 +96,31 @@ export class GitLabAPI {
     if (position) {
       payload.position = position;
     }
-    return this._request('POST', `/merge_requests/${mrIid}/discussions`, payload);
+    return this._request('POST', `/merge_requests/${encodeURIComponent(mrIid)}/discussions`, payload);
   }
 
   async getMergeRequestNotes(mrIid: string): Promise<MergeRequestNote[]> {
-    return this._request<MergeRequestNote[]>('GET', `/merge_requests/${mrIid}/notes?per_page=100`);
+    return this._request<MergeRequestNote[]>('GET', `/merge_requests/${encodeURIComponent(mrIid)}/notes?per_page=100`);
   }
 
   async deleteMergeRequestNote(mrIid: string, noteId: number): Promise<void> {
-    return this._request<void>('DELETE', `/merge_requests/${mrIid}/notes/${noteId}`);
+    return this._request<void>('DELETE', `/merge_requests/${encodeURIComponent(mrIid)}/notes/${encodeURIComponent(noteId)}`);
   }
 
   async getMergeRequestDiscussions(mrIid: string): Promise<any[]> {
-    return this._request<any[]>('GET', `/merge_requests/${mrIid}/discussions?per_page=100`);
+    return this._request<any[]>('GET', `/merge_requests/${encodeURIComponent(mrIid)}/discussions?per_page=100`);
   }
 
   async deleteMergeRequestDiscussionNote(mrIid: string, discussionId: string, noteId: number): Promise<void> {
-    return this._request<void>('DELETE', `/merge_requests/${mrIid}/discussions/${discussionId}/notes/${noteId}`);
+    return this._request<void>('DELETE', `/merge_requests/${encodeURIComponent(mrIid)}/discussions/${encodeURIComponent(discussionId)}/notes/${encodeURIComponent(noteId)}`);
   }
 
   async getFileContent(filePath: string, ref: string): Promise<string> {
     const encodedPath = encodeURIComponent(filePath);
-    return this._request<string>('GET', `/repository/files/${encodedPath}/raw?ref=${ref}`);
+    return this._request<string>('GET', `/repository/files/${encodedPath}/raw?ref=${encodeURIComponent(ref)}`);
   }
 
   async compareRefs(from: string, to: string): Promise<unknown> {
-    return this._request('GET', `/repository/compare?from=${from}&to=${to}`);
+    return this._request('GET', `/repository/compare?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
   }
 }
