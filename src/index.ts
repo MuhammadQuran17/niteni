@@ -52,7 +52,10 @@ export async function runMergeRequestReview(): Promise<ReviewResult> {
   });
 
   const mrIid = config.gitlab.mrIid;
-  console.log(`Reviewing MR !${mrIid} in project ${config.gitlab.projectId}...`);
+  console.log(`API URL:    ${config.gitlab.apiUrl}`);
+  console.log(`Project ID: ${config.gitlab.projectId}`);
+  console.log(`MR IID:     !${mrIid}`);
+  console.log(`Token:      ${config.gitlab.token ? config.gitlab.token.slice(0, 4) + '****' : '(empty)'}`);
 
   const [mr, changes] = await Promise.all([
     gitlab.getMergeRequest(mrIid),

@@ -23,7 +23,8 @@ export class GitLabAPI {
 
   private _request<T>(method: string, path: string, body: Record<string, unknown> | null = null): Promise<T> {
     return new Promise((resolve, reject) => {
-      const url = new URL(`${this.apiUrl}/projects/${this.projectId}${path}`);
+      const encodedProjectId = encodeURIComponent(this.projectId);
+      const url = new URL(`${this.apiUrl}/projects/${encodedProjectId}${path}`);
       const transport = url.protocol === 'https:' ? https : http;
 
       const options: http.RequestOptions = {
