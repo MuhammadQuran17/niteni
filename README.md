@@ -58,10 +58,9 @@ niteni:
   script:
     - niteni --mode mr
   allow_failure: true
-  variables:
-    GEMINI_API_KEY: $GEMINI_API_KEY
-    GITLAB_TOKEN: $GITLAB_TOKEN
 ```
+
+> **Note:** Do NOT re-declare `GEMINI_API_KEY` or `GITLAB_TOKEN` in the job `variables:` section — this causes a circular reference. Project-level CI/CD variables are automatically available in all jobs.
 
 ### 3. Or install as a dependency
 
@@ -255,17 +254,17 @@ Integrate "Niteni" — an AI-powered code review tool — into this GitLab repos
      script:
        - niteni --mode mr
      allow_failure: true
-     variables:
-       GEMINI_API_KEY: $GEMINI_API_KEY
-       GITLAB_TOKEN: $GITLAB_TOKEN
-       REVIEW_FAIL_ON_CRITICAL: "false"
-       REVIEW_EXCLUDE_PATTERNS: "package-lock.json,yarn.lock,*.min.js,*.min.css,*.map"
 
-2. Ensure the following CI/CD variables are configured in GitLab (Settings > CI/CD > Variables):
-   - GEMINI_API_KEY — Google Gemini API key (masked)
-   - GITLAB_TOKEN — GitLab access token with `api` scope (masked)
+   IMPORTANT: Do NOT re-declare GEMINI_API_KEY or GITLAB_TOKEN in the job `variables:` section.
+   Project-level CI/CD variables are automatically available in all jobs. Re-declaring them
+   causes a circular reference where the variable expands to a literal string instead of its value.
 
-3. Optional environment variables to customize behavior:
+2. Ensure the following CI/CD variables are configured in GitLab (Settings > CI/CD > Variables).
+   Set them as type "Variable" (not "File"), check "Mask variable", and UNCHECK "Protect variable":
+   - GEMINI_API_KEY — Google Gemini API key
+   - GITLAB_TOKEN — GitLab Personal Access Token with `api` scope
+
+3. Optional environment variables (these CAN be added to the job `variables:` section since they are plain values, not references):
    - GEMINI_MODEL (default: gemini-2.5-pro) — Gemini model for API fallback
    - REVIEW_MAX_FILES (default: 50) — Max files to include in the review
    - REVIEW_MAX_DIFF_SIZE (default: 100000) — Max diff size in characters
