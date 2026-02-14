@@ -92,6 +92,9 @@ export async function runMergeRequestReview(): Promise<ReviewResult> {
 
   const reviewResult = await reviewer.review(diffContent);
   console.log('Review completed.');
+  console.log('--- Review Output ---');
+  console.log(reviewResult);
+  console.log('--- End Review Output ---');
 
   if (config.review.postAsNote) {
     // Clean up previous inline discussions and notes
