@@ -27,8 +27,6 @@ niteni:
     - node dist/cli.js --mode mr
   allow_failure: true
   variables:
-    GEMINI_API_KEY: $GEMINI_API_KEY
-    GITLAB_TOKEN: $GITLAB_TOKEN
     REVIEW_FAIL_ON_CRITICAL: "false"
     REVIEW_EXCLUDE_PATTERNS: "package-lock.json,yarn.lock,*.min.js,*.min.css,*.map"
 
