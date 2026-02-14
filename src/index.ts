@@ -129,18 +129,29 @@ export async function runMergeRequestReview(): Promise<ReviewResult> {
       for (const finding of findings) {
         if (!finding.file || finding.file === 'unknown' || !finding.line) continue;
 
-        let body = `${REVIEW_HEADER}\n\n`;
-        body += `#### :warning: ${finding.severity} \u2014 \`${finding.file}:${finding.line}\`\n\n`;
+        const severityEmoji: Record<string, string> = {
+          CRITICAL: ':rotating_light:',
+          HIGH: ':warning:',
+          MEDIUM: ':large_blue_circle:',
+          LOW: ':information_source:',
+        };
+        const emoji = severityEmoji[finding.severity] || ':speech_balloon:';
 
-        // Extract description without the suggestion block for the comment body
+        let body = `${REVIEW_HEADER}\n\n`;
+        body += `#### ${emoji} ${finding.severity} \u2014 \`${finding.file}:${finding.line}\`\n\n`;
+
+        // Extract description without suggestion block and rationale line
         const descWithoutSuggestion = finding.description
           .replace(/```suggestion\n[\s\S]*?```/, '')
+          .replace(/>\s*Rationale:.*/, '')
+          .replace(/Rationale:.*/, '')
           .replace(/---\s*$/, '')
           .trim();
         body += `**Issue:** ${descWithoutSuggestion}\n`;
 
         if (finding.suggestion) {
-          body += `\n**Suggested fix:** _(click "Apply suggestion" to apply directly)_\n\`\`\`suggestion\n${finding.suggestion}\`\`\`\n`;
+          const rationale = finding.rationale || 'Applying this suggestion addresses the issue described above.';
+          body += `\n**Why this change:** ${rationale}\n\`\`\`suggestion\n${finding.suggestion}\`\`\`\n`;
         }
 
         // Try inline diff comment first, fall back to general discussion

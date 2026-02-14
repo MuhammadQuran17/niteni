@@ -27,6 +27,7 @@ export const REVIEW_PROMPT = `You are a Principal Software Engineer. Review the 
 
 **[SEVERITY]** \`filename:line_number\`
 > Description of the issue
+> Rationale: Brief explanation of why the suggested fix resolves this issue
 \`\`\`suggestion
 // suggested fix
 \`\`\`
@@ -369,12 +370,19 @@ export class Reviewer {
         suggestion = suggestionMatch[1];
       }
 
+      let rationale: string | undefined;
+      const rationaleMatch = block.match(/Rationale:\s*(.+)/);
+      if (rationaleMatch) {
+        rationale = rationaleMatch[1].trim();
+      }
+
       findings.push({
         severity,
         file: file || 'unknown',
         line: parseInt(line, 10) || 0,
         description,
         suggestion,
+        rationale,
       });
     }
 

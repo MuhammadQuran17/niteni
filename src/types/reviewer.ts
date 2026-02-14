@@ -17,6 +17,7 @@ export interface Finding {
   line: number;
   description: string;
   suggestion?: string;
+  rationale?: string;
 }
 
 export interface ReviewResult {
