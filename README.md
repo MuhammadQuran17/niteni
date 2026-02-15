@@ -10,9 +10,9 @@ Uses the Gemini CLI `/code-review` command to analyze code changes on your curre
 
 This package uses a **cascading review strategy**:
 
-1. **Gemini REST API** (preferred) — Calls the Gemini API directly with a structured prompt for reliable, formatted output
-2. **Gemini CLI `/code-review` extension** — Falls back to the CLI extension which runs `git diff` internally
-3. **Gemini CLI with direct prompt** — Final fallback passing the diff directly to `gemini -p`
+1. **Gemini CLI `/code-review` extension** (preferred) — Runs `git diff` internally for convenient, zero-config reviews
+2. **Gemini CLI with direct prompt** — Falls back to passing the diff directly to `gemini -p`
+3. **Gemini REST API** — Final fallback calling the Gemini API directly with a structured prompt
 
 The extension is auto-installed if Gemini CLI is available but the extension is not yet present.
 
@@ -22,7 +22,7 @@ The extension is auto-installed if Gemini CLI is available but the extension is 
 - **Severity-based emojis** — :rotating_light: CRITICAL, :warning: HIGH, :large_blue_circle: MEDIUM, :information_source: LOW
 - **GitLab suggestion blocks** — One-click "Apply suggestion" for each code fix
 - **Rationale explanations** — Each suggestion includes why the change is recommended
-- Cascading fallback strategy (REST API -> CLI extension -> CLI prompt)
+- Cascading fallback strategy (CLI extension -> CLI prompt -> REST API)
 - Auto-installs the Gemini CLI code-review extension when available
 - Automatic cleanup of previous review comments on re-review
 - Configurable file filtering (include/exclude patterns)
@@ -61,23 +61,6 @@ niteni-code-review:
 
 > **Note:** Do NOT re-declare `GEMINI_API_KEY` or `GITLAB_TOKEN` in the job `variables:` section — this causes a circular reference. Project-level CI/CD variables are automatically available in all jobs.
 
-### 3. Or install as a dependency
-
-```bash
-npm install niteni
-```
-
-```typescript
-import { runMergeRequestReview, Reviewer } from 'niteni';
-
-// Run full MR review (requires env vars)
-const result = await runMergeRequestReview();
-
-// Or use the Reviewer class directly
-const reviewer = new Reviewer({ geminiApiKey: 'your-key' });
-const review = await reviewer.review(diffContent);
-```
-
 ## Gemini CLI /code-review Extension
 
 This package leverages the [code-review extension](https://github.com/gemini-cli-extensions/code-review) for Gemini CLI.
@@ -113,22 +96,6 @@ All configuration is via environment variables:
 | `REVIEW_EXCLUDE_PATTERNS` | `package-lock.json,yarn.lock,*.min.js,*.min.css` | File patterns to exclude |
 | `REVIEW_POST_AS_NOTE` | `true` | Post review as MR note |
 | `REVIEW_FAIL_ON_CRITICAL` | `false` | Fail pipeline on CRITICAL findings |
-
-## CLI Usage
-
-```bash
-# Review a GitLab merge request
-niteni --mode mr
-
-# Review local diff against target branch
-GEMINI_API_KEY=your-key niteni --mode diff
-
-# Run simulation with sample diff and mock review
-niteni --mode simulate
-
-# Show help
-niteni --help
-```
 
 ## Review Output
 

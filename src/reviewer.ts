@@ -273,29 +273,29 @@ export class Reviewer {
       return 'No code changes to review.';
     }
 
-    // Strategy 1: Gemini REST API (most reliable — uses our structured prompt directly)
-    console.log('[Strategy 1] Trying Gemini REST API...');
-    try {
-      const apiResult = await this.reviewWithAPI(diffContent);
-      if (apiResult && this.isStructuredReview(apiResult)) {
-        console.log('[Strategy 1] Gemini REST API completed successfully.');
-        return apiResult;
-      }
-      console.warn('[Strategy 1] API response not in structured format.');
-    } catch (err) {
-      console.warn('[Strategy 1] Gemini REST API failed:', (err as Error).message);
-    }
-
-    // Strategy 2: Gemini CLI with /code-review extension
+    // Strategy 1: Gemini CLI /code-review extension (runs git diff internally)
     const extensionResult = await this.reviewWithCodeReviewExtension();
     if (extensionResult) {
       return extensionResult;
     }
 
-    // Strategy 3: Gemini CLI with diff as direct prompt
+    // Strategy 2: Gemini CLI with diff as direct prompt
     const cliResult = await this.reviewWithGeminiCLI(diffContent);
     if (cliResult) {
       return cliResult;
+    }
+
+    // Strategy 3: Gemini REST API (fallback — uses our structured prompt directly)
+    console.log('[Strategy 3] Trying Gemini REST API...');
+    try {
+      const apiResult = await this.reviewWithAPI(diffContent);
+      if (apiResult && this.isStructuredReview(apiResult)) {
+        console.log('[Strategy 3] Gemini REST API completed successfully.');
+        return apiResult;
+      }
+      console.warn('[Strategy 3] API response not in structured format.');
+    } catch (err) {
+      console.warn('[Strategy 3] Gemini REST API failed:', (err as Error).message);
     }
 
     throw new Error('All review strategies failed. Check GEMINI_API_KEY and network connectivity.');
