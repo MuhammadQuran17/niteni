@@ -125,7 +125,7 @@ export class Reviewer {
       return apiResult;
     }
 
-    throw new Error('Review failed: API response not in expected format. Check GEMINI_API_KEY and network connectivity.');
+    throw new Error('Review failed: API response was empty or not in the expected structured format.');
   }
 
   filterDiff(diffContent: string, { includePatterns, excludePatterns, maxDiffSize }: FilterOptions): string {
