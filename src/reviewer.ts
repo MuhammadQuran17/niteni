@@ -89,7 +89,7 @@ export class Reviewer {
       }],
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 65536,
         responseMimeType: 'application/json',
         responseSchema: RESPONSE_SCHEMA,
       },
@@ -113,7 +113,12 @@ export class Reviewer {
           try {
             const parsed = JSON.parse(data);
             if (parsed.candidates?.[0]) {
-              const text = parsed.candidates[0].content.parts[0].text;
+              const candidate = parsed.candidates[0];
+              if (candidate.finishReason === 'MAX_TOKENS') {
+                reject(new Error('Gemini response truncated due to token limit. Try reducing diff size.'));
+                return;
+              }
+              const text = candidate.content.parts[0].text;
               const result: StructuredReviewResponse = JSON.parse(text);
               resolve(result);
             } else if (parsed.error) {
