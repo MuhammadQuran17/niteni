@@ -1,7 +1,7 @@
 import * as https from 'https';
-import type { ReviewerOptions, FilterOptions, Finding, Severity } from './types';
+import type { ReviewerOptions, FilterOptions, Finding, StructuredReviewResponse } from './types';
 
-export const REVIEW_PROMPT = `You are a Principal Software Engineer. Review the code diff below and respond ONLY with the structured format shown. Do NOT include any thinking, planning, or conversational text. Do NOT attempt to modify files or run commands. Just analyze and respond.
+export const REVIEW_PROMPT = `You are a Principal Software Engineer performing a code review.
 
 ## Severity Levels
 - **CRITICAL**: Security vulnerabilities, data loss, logic failures
@@ -13,33 +13,54 @@ export const REVIEW_PROMPT = `You are a Principal Software Engineer. Review the 
 - Only comment on changed lines (+ or - lines in the diff)
 - Include precise line numbers and code suggestions
 - Skip package-lock.json, yarn.lock, and minified files
-
-## Required Output Format (follow EXACTLY)
-
-### Summary
-[1-2 sentence summary of what the changes do]
-
-### Findings
-
-**[SEVERITY]** \`filename:line_number\`
-> Description of the issue
-> Rationale: Brief explanation of why the suggested fix resolves this issue
-\`\`\`suggestion
-// suggested fix
-\`\`\`
-
----
-
-(Repeat for each finding. Separate findings with ---)
-
-If no issues found, respond with:
-
-### Summary
-[summary]
-
-### Findings
-No significant issues found. The code changes look good.
+- If no issues found, return an empty findings array
 `;
+
+const RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    summary: {
+      type: 'STRING',
+      description: '1-2 sentence summary of what the code changes do',
+    },
+    findings: {
+      type: 'ARRAY',
+      description: 'List of code review findings. Empty array if no issues found.',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          severity: {
+            type: 'STRING',
+            enum: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'],
+            description: 'Severity level of the finding',
+          },
+          file: {
+            type: 'STRING',
+            description: 'File path where the issue is found',
+          },
+          line: {
+            type: 'INTEGER',
+            description: 'Line number where the issue is found',
+          },
+          description: {
+            type: 'STRING',
+            description: 'Description of the issue',
+          },
+          suggestion: {
+            type: 'STRING',
+            description: 'Suggested code fix',
+          },
+          rationale: {
+            type: 'STRING',
+            description: 'Brief explanation of why the suggested fix resolves this issue',
+          },
+        },
+        required: ['severity', 'file', 'line', 'description'],
+      },
+    },
+  },
+  required: ['summary', 'findings'],
+};
 
 export class Reviewer {
   private geminiApiKey: string;
@@ -50,12 +71,7 @@ export class Reviewer {
     this.model = model;
   }
 
-  private isStructuredReview(output: string): boolean {
-    return /###\s*(Summary|Findings)/i.test(output) ||
-           /\*\*\[?(CRITICAL|HIGH|MEDIUM|LOW)\]?\*\*/.test(output);
-  }
-
-  async reviewWithAPI(diffContent: string): Promise<string> {
+  async reviewWithAPI(diffContent: string): Promise<StructuredReviewResponse> {
     if (!/^[a-zA-Z0-9._-]+$/.test(this.model)) {
       throw new Error(`Invalid model name: ${this.model}`);
     }
@@ -63,7 +79,7 @@ export class Reviewer {
     const body = JSON.stringify({
       systemInstruction: {
         parts: [{
-          text: 'You are a code review tool. Output ONLY structured markdown in the exact format requested. Never include thinking, planning, or conversational text.',
+          text: 'You are a code review tool. Analyze the diff and return structured findings.',
         }],
       },
       contents: [{
@@ -74,6 +90,8 @@ export class Reviewer {
       generationConfig: {
         temperature: 0.2,
         maxOutputTokens: 8192,
+        responseMimeType: 'application/json',
+        responseSchema: RESPONSE_SCHEMA,
       },
     });
 
@@ -95,7 +113,9 @@ export class Reviewer {
           try {
             const parsed = JSON.parse(data);
             if (parsed.candidates?.[0]) {
-              resolve(parsed.candidates[0].content.parts[0].text);
+              const text = parsed.candidates[0].content.parts[0].text;
+              const result: StructuredReviewResponse = JSON.parse(text);
+              resolve(result);
             } else if (parsed.error) {
               reject(new Error(`Gemini API error: ${parsed.error.message}`));
             } else {
@@ -113,19 +133,15 @@ export class Reviewer {
     });
   }
 
-  async review(diffContent: string): Promise<string> {
+  async review(diffContent: string): Promise<StructuredReviewResponse> {
     if (!diffContent || diffContent.trim().length === 0) {
-      return 'No code changes to review.';
+      return { summary: 'No code changes to review.', findings: [] };
     }
 
     console.log('Reviewing code changes via Gemini REST API...');
-    const apiResult = await this.reviewWithAPI(diffContent);
-    if (apiResult && this.isStructuredReview(apiResult)) {
-      console.log('Gemini REST API review completed successfully.');
-      return apiResult;
-    }
-
-    throw new Error('Review failed: API response was empty or not in the expected structured format.');
+    const result = await this.reviewWithAPI(diffContent);
+    console.log('Gemini REST API review completed successfully.');
+    return result;
   }
 
   filterDiff(diffContent: string, { includePatterns, excludePatterns, maxDiffSize }: FilterOptions): string {
@@ -180,53 +196,7 @@ export class Reviewer {
     return regex.test(filePath) || filePath.endsWith(pattern.replace(/^\*/, ''));
   }
 
-  parseFindings(reviewText: string): Finding[] {
-    const findings: Finding[] = [];
-    const findingRegex = /\*\*\[?(CRITICAL|HIGH|MEDIUM|LOW)\]?\*\*\s*`([^`]+)`/g;
-    let match: RegExpExecArray | null;
-
-    while ((match = findingRegex.exec(reviewText)) !== null) {
-      const severity = match[1] as Severity;
-      const location = match[2];
-      const [file, line] = location.split(':');
-
-      const startIdx = match.index + match[0].length;
-      const nextMatch = findingRegex.exec(reviewText);
-      const endIdx = nextMatch ? nextMatch.index : reviewText.length;
-      findingRegex.lastIndex = match.index + match[0].length;
-
-      const block = reviewText.substring(startIdx, endIdx);
-
-      const description = block
-        .replace(/^[\s>]+/, '')
-        .trim();
-
-      let suggestion: string | undefined;
-      const suggestionMatch = block.match(/```suggestion\n([\s\S]*?)```/);
-      if (suggestionMatch) {
-        suggestion = suggestionMatch[1];
-      }
-
-      let rationale: string | undefined;
-      const rationaleMatch = block.match(/Rationale:\s*(.+)/);
-      if (rationaleMatch) {
-        rationale = rationaleMatch[1].trim();
-      }
-
-      findings.push({
-        severity,
-        file: file || 'unknown',
-        line: parseInt(line, 10) || 0,
-        description,
-        suggestion,
-        rationale,
-      });
-    }
-
-    return findings;
-  }
-
-  hasCriticalFindings(reviewText: string): boolean {
-    return /\*\*\[?CRITICAL\]?\*\*/.test(reviewText);
+  hasCriticalFindings(findings: Finding[]): boolean {
+    return findings.some(f => f.severity === 'CRITICAL');
   }
 }

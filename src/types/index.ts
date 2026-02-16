@@ -19,5 +19,6 @@ export type {
   ReviewerOptions,
   FilterOptions,
   Finding,
+  StructuredReviewResponse,
   ReviewResult,
 } from './reviewer';

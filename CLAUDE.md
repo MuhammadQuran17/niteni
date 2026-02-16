@@ -27,7 +27,7 @@ Tests use Node's built-in `node:test` and `node:assert` modules. Run `npm run bu
 src/
 ├── cli.ts          # CLI entry point — three modes: mr, diff, simulate
 ├── index.ts        # Main orchestration: runMergeRequestReview() & runDiffReview()
-├── reviewer.ts     # Gemini review logic with cascading fallback strategy
+├── reviewer.ts     # Gemini review logic with structured JSON output
 ├── gitlab-api.ts   # GitLab REST API client (MR data, inline comments, cleanup)
 ├── config.ts       # Environment variable parsing & validation
 ├── simulate.ts     # Self-contained demo with ANSI-colored mock output
@@ -35,19 +35,16 @@ src/
     ├── index.ts    # Barrel export
     ├── config.ts   # AppConfig, GitLabConfig, GeminiConfig, ReviewConfig
     ├── gitlab.ts   # MergeRequest, DiffPosition, MergeRequestNote
-    └── reviewer.ts # Severity, Finding, ReviewResult, FilterOptions
+    └── reviewer.ts # Severity, Finding, StructuredReviewResponse, ReviewResult, FilterOptions
 ```
 
-### Cascading Review Strategy (reviewer.ts)
+### Gemini Structured Output (reviewer.ts)
 
-The `Reviewer` class tries three strategies in order, falling back on failure:
-1. **Gemini REST API** — direct HTTP call to `generativelanguage.googleapis.com`
-2. **Gemini CLI `/code-review` extension** — invokes `gemini` CLI tool
-3. **Gemini CLI with direct prompt** — passes diff content as a prompt
+The `Reviewer` class uses the Gemini REST API with structured output (`responseMimeType: "application/json"` + `responseSchema`) to return typed `StructuredReviewResponse` objects directly — no regex parsing needed. The response schema enforces `summary` (string) and `findings` (array of `Finding` objects with severity, file, line, description, optional suggestion/rationale).
 
 ### MR Review Flow (index.ts)
 
-`runMergeRequestReview()`: Fetch MR metadata → get diffs → filter by include/exclude patterns → run cascading review → parse findings with regex → clean up old review comments → post inline diff comments with severity emojis and suggestion blocks.
+`runMergeRequestReview()`: Fetch MR metadata → get diffs → filter by include/exclude patterns → call Gemini with structured output → receive typed findings directly → clean up old review comments → post inline diff comments with severity emojis and suggestion blocks.
 
 ### GitLab API Client (gitlab-api.ts)
 
@@ -55,7 +52,7 @@ Supports three auth modes via `GITLAB_TOKEN`: `PRIVATE-TOKEN`, `JOB-TOKEN` (CI d
 
 ### Review Output Format
 
-Findings are parsed with regex from structured markdown. Each finding has: severity (`CRITICAL`|`HIGH`|`MEDIUM`|`LOW`), file path, line number, description, optional suggestion block, and rationale.
+Findings are returned as typed JSON objects via Gemini's structured output. Each `Finding` has: severity (`CRITICAL`|`HIGH`|`MEDIUM`|`LOW`), file path, line number, description, optional suggestion, and optional rationale.
 
 ## Key Environment Variables
 

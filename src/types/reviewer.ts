@@ -20,7 +20,13 @@ export interface Finding {
   rationale?: string;
 }
 
+export interface StructuredReviewResponse {
+  summary: string;
+  findings: Finding[];
+}
+
 export interface ReviewResult {
-  review: string;
+  summary: string;
+  findings: Finding[];
   hasCritical: boolean;
 }
