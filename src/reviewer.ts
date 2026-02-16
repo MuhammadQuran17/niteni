@@ -118,8 +118,17 @@ export class Reviewer {
                 reject(new Error('Gemini response truncated due to token limit. Try reducing diff size.'));
                 return;
               }
-              const text = candidate.content.parts[0].text;
-              const result: StructuredReviewResponse = JSON.parse(text);
+              const content = candidate.content;
+
+              if (!content || !content.parts || !content.parts[0]) {
+                reject(new Error('Gemini returned no content (likely blocked by safety filters).'));
+                return;
+              }
+
+              const text = content.parts[0].text;
+              const cleanedText = text.replace(/^```json\n|\n```$/g, '');
+              const result: StructuredReviewResponse = JSON.parse(cleanedText);
+
               resolve(result);
             } else if (parsed.error) {
               reject(new Error(`Gemini API error: ${parsed.error.message}`));

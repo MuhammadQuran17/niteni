@@ -156,14 +156,12 @@ export async function runMergeRequestReview(): Promise<ReviewResult> {
         body += `#### ${emoji} ${finding.severity} \u2014 \`${finding.file}:${finding.line}\`\n\n`;
         body += `**Issue:** ${finding.description}\n`;
 
-        const rationale = finding.rationale || 'Applying this suggestion addresses the issue described above.';
-
-        if (rationale) {
-          body += `\n**Rationale:** ${rationale}\n`;
+        if (finding.rationale) {
+          body += `\n**Rationale:** ${finding.rationale}\n`;
         }
 
         if (finding.suggestion) {
-          body += `\n**Suggestion:**\n\`\`\`suggestion\n${finding.suggestion}\n\`\`\`\n`;
+          body += `\n\`\`\`suggestion\n${finding.suggestion}\n\`\`\`\n`;
         }
 
         // Try inline diff comment first, fall back to general discussion
