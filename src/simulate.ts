@@ -1,5 +1,5 @@
 import { Reviewer } from './reviewer';
-import type { ReviewResult } from './types';
+import type { ReviewResult, Finding } from './types';
 
 const SAMPLE_DIFF = `diff --git a/src/auth/login.ts b/src/auth/login.ts
 --- a/src/auth/login.ts
@@ -95,121 +95,98 @@ diff --git a/src/utils/cache.ts b/src/utils/cache.ts
 +}
 `;
 
-const MOCK_REVIEW_RESULT = `### Summary
-Adds JWT-based authentication to the login flow, a user deletion endpoint, a role update endpoint, and an in-memory cache utility. Several changes introduce serious security vulnerabilities.
+const MOCK_FINDINGS: Finding[] = [
+  {
+    severity: 'CRITICAL',
+    file: 'src/auth/login.ts',
+    line: 14,
+    description: 'SQL injection vulnerability. User input is directly concatenated into the SQL query string without parameterization or escaping.',
+    suggestion: "const user = await db.query('SELECT * FROM users WHERE username = $1', [username]);",
+    rationale: 'Parameterized queries prevent SQL injection by separating data from code.',
+  },
+  {
+    severity: 'CRITICAL',
+    file: 'src/auth/login.ts',
+    line: 22,
+    description: 'JWT secret is hardcoded as a plaintext string. This exposes the signing key in source control and allows anyone with repository access to forge tokens.',
+    suggestion: "const token = jwt.sign(\n  { userId: user.id, role: user.role },\n  process.env.JWT_SECRET!,\n  { expiresIn: '24h' }\n);",
+    rationale: 'Secrets should be loaded from environment variables, never committed to source code.',
+  },
+  {
+    severity: 'HIGH',
+    file: 'src/auth/login.ts',
+    line: 20,
+    description: 'Loose equality (==) used for password comparison. Passwords should be hashed and compared using a timing-safe comparison function, not compared as plaintext.',
+    suggestion: "import bcrypt from 'bcrypt';\n// ...\nconst isValid = await bcrypt.compare(password, user.password_hash);\nif (isValid) {",
+    rationale: 'Plaintext password comparison is insecure; use bcrypt or similar hashing library.',
+  },
+  {
+    severity: 'HIGH',
+    file: 'src/auth/login.ts',
+    line: 23,
+    description: 'JWT token has no expiration set. Without an expiresIn claim, tokens are valid indefinitely, meaning a stolen token can never be revoked by time alone.',
+    suggestion: "const token = jwt.sign(\n  { userId: user.id, role: user.role },\n  process.env.JWT_SECRET!,\n  { expiresIn: '24h' }\n);",
+    rationale: 'Token expiration limits the window of compromise for stolen credentials.',
+  },
+  {
+    severity: 'CRITICAL',
+    file: 'src/api/users.ts',
+    line: 14,
+    description: 'SQL injection in DELETE endpoint. The userId parameter is interpolated directly into three SQL queries without parameterization.',
+    suggestion: "await db.query('DELETE FROM users WHERE id = $1', [userId]);\nawait db.query('DELETE FROM sessions WHERE user_id = $1', [userId]);\nawait db.query('DELETE FROM audit_log WHERE user_id = $1', [userId]);",
+    rationale: 'Parameterized queries prevent SQL injection by separating data from code.',
+  },
+  {
+    severity: 'HIGH',
+    file: 'src/api/users.ts',
+    line: 13,
+    description: 'The delete endpoint has no authentication middleware. Any unauthenticated user can delete arbitrary accounts.',
+    suggestion: "router.delete('/users/:id', authMiddleware, async (req, res) => {",
+    rationale: 'All destructive endpoints must require authentication to prevent unauthorized access.',
+  },
+  {
+    severity: 'CRITICAL',
+    file: 'src/api/users.ts',
+    line: 21,
+    description: 'SQL injection in role update endpoint. The role value from the request body is interpolated directly into the query, allowing privilege escalation or data exfiltration.',
+    suggestion: "await db.query('UPDATE users SET role = $1 WHERE id = $2', [role, req.params.id]);",
+    rationale: 'Parameterized queries prevent SQL injection by separating data from code.',
+  },
+  {
+    severity: 'HIGH',
+    file: 'src/api/users.ts',
+    line: 20,
+    description: "The role update endpoint has no authorization check. Any user can change any other user's role, including escalating their own privileges to admin.",
+    suggestion: "router.put('/users/:id/role', authMiddleware, requireRole('admin'), async (req, res) => {",
+    rationale: 'Role changes require admin-level authorization to prevent privilege escalation.',
+  },
+  {
+    severity: 'MEDIUM',
+    file: 'src/api/users.ts',
+    line: 14,
+    description: 'User deletion is not wrapped in a transaction. If the second or third DELETE fails, the database is left in an inconsistent state with orphaned records.',
+    suggestion: "await db.transaction(async (trx) => {\n  await trx.query('DELETE FROM audit_log WHERE user_id = $1', [userId]);\n  await trx.query('DELETE FROM sessions WHERE user_id = $1', [userId]);\n  await trx.query('DELETE FROM users WHERE id = $1', [userId]);\n});",
+    rationale: 'Transactions ensure atomicity of multi-table operations.',
+  },
+  {
+    severity: 'MEDIUM',
+    file: 'src/utils/cache.ts',
+    line: 1,
+    description: 'In-memory cache uses any type for stored data and return values, losing all type safety. Consider using a generic type parameter.',
+    suggestion: "const cache: Record<string, { data: unknown; expires: number }> = {};\n\nexport function setCache<T>(key: string, data: T, ttlMs: number = 300000): void {\n  cache[key] = { data, expires: Date.now() + ttlMs };\n}\n\nexport function getCache<T>(key: string): T | null {",
+    rationale: 'Generic types preserve type safety without runtime overhead.',
+  },
+  {
+    severity: 'LOW',
+    file: 'src/utils/cache.ts',
+    line: 22,
+    description: 'clearCache iterates with for...in and deletes keys individually. Reassigning to an empty object is simpler and faster.',
+    suggestion: "export function clearCache(): void {\n  Object.keys(cache).forEach(key => delete cache[key]);\n}",
+    rationale: 'Object.keys() is more idiomatic and avoids prototype chain issues with for...in.',
+  },
+];
 
-### Findings
-
-**[CRITICAL]** \`src/auth/login.ts:14\`
-> SQL injection vulnerability. User input is directly concatenated into the SQL query string without parameterization or escaping.
-\`\`\`suggestion
-const user = await db.query('SELECT * FROM users WHERE username = $1', [username]);
-\`\`\`
-
----
-
-**[CRITICAL]** \`src/auth/login.ts:22\`
-> JWT secret is hardcoded as a plaintext string. This exposes the signing key in source control and allows anyone with repository access to forge tokens.
-\`\`\`suggestion
-const token = jwt.sign(
-  { userId: user.id, role: user.role },
-  process.env.JWT_SECRET!,
-  { expiresIn: '24h' }
-);
-\`\`\`
-
----
-
-**[HIGH]** \`src/auth/login.ts:20\`
-> Loose equality (\`==\`) used for password comparison. Passwords should be hashed and compared using a timing-safe comparison function, not compared as plaintext.
-\`\`\`suggestion
-import bcrypt from 'bcrypt';
-// ...
-const isValid = await bcrypt.compare(password, user.password_hash);
-if (isValid) {
-\`\`\`
-
----
-
-**[HIGH]** \`src/auth/login.ts:23\`
-> JWT token has no expiration set. Without an \`expiresIn\` claim, tokens are valid indefinitely, meaning a stolen token can never be revoked by time alone.
-\`\`\`suggestion
-const token = jwt.sign(
-  { userId: user.id, role: user.role },
-  process.env.JWT_SECRET!,
-  { expiresIn: '24h' }
-);
-\`\`\`
-
----
-
-**[CRITICAL]** \`src/api/users.ts:14\`
-> SQL injection in DELETE endpoint. The \`userId\` parameter is interpolated directly into three SQL queries without parameterization.
-\`\`\`suggestion
-await db.query('DELETE FROM users WHERE id = $1', [userId]);
-await db.query('DELETE FROM sessions WHERE user_id = $1', [userId]);
-await db.query('DELETE FROM audit_log WHERE user_id = $1', [userId]);
-\`\`\`
-
----
-
-**[HIGH]** \`src/api/users.ts:13\`
-> The delete endpoint has no authentication middleware. Any unauthenticated user can delete arbitrary accounts.
-\`\`\`suggestion
-router.delete('/users/:id', authMiddleware, async (req, res) => {
-\`\`\`
-
----
-
-**[CRITICAL]** \`src/api/users.ts:21\`
-> SQL injection in role update endpoint. The \`role\` value from the request body is interpolated directly into the query, allowing privilege escalation or data exfiltration.
-\`\`\`suggestion
-await db.query('UPDATE users SET role = $1 WHERE id = $2', [role, req.params.id]);
-\`\`\`
-
----
-
-**[HIGH]** \`src/api/users.ts:20\`
-> The role update endpoint has no authorization check. Any user can change any other user's role, including escalating their own privileges to admin.
-\`\`\`suggestion
-router.put('/users/:id/role', authMiddleware, requireRole('admin'), async (req, res) => {
-\`\`\`
-
----
-
-**[MEDIUM]** \`src/api/users.ts:14\`
-> User deletion is not wrapped in a transaction. If the second or third DELETE fails, the database is left in an inconsistent state with orphaned records.
-\`\`\`suggestion
-await db.transaction(async (trx) => {
-  await trx.query('DELETE FROM audit_log WHERE user_id = $1', [userId]);
-  await trx.query('DELETE FROM sessions WHERE user_id = $1', [userId]);
-  await trx.query('DELETE FROM users WHERE id = $1', [userId]);
-});
-\`\`\`
-
----
-
-**[MEDIUM]** \`src/utils/cache.ts:1\`
-> In-memory cache uses \`any\` type for stored data and return values, losing all type safety. Consider using a generic type parameter.
-\`\`\`suggestion
-const cache: Record<string, { data: unknown; expires: number }> = {};
-
-export function setCache<T>(key: string, data: T, ttlMs: number = 300000): void {
-  cache[key] = { data, expires: Date.now() + ttlMs };
-}
-
-export function getCache<T>(key: string): T | null {
-\`\`\`
-
----
-
-**[LOW]** \`src/utils/cache.ts:22\`
-> \`clearCache\` iterates with \`for...in\` and deletes keys individually. Reassigning to an empty object is simpler and faster.
-\`\`\`suggestion
-export function clearCache(): void {
-  Object.keys(cache).forEach(key => delete cache[key]);
-}
-\`\`\``;
+const MOCK_SUMMARY = 'Adds JWT-based authentication to the login flow, a user deletion endpoint, a role update endpoint, and an in-memory cache utility. Several changes introduce serious security vulnerabilities.';
 
 const REVIEW_HEADER = '<!-- niteni-review -->';
 const BOT_SIGNATURE = '\n\n---\n*Reviewed by [Niteni](https://github.com/denyherianto/niteni) — AI-powered code review powered by [Gemini CLI](https://github.com/gemini-cli-extensions/code-review)*';
@@ -274,21 +251,38 @@ export async function runSimulation(): Promise<ReviewResult> {
   console.log(`${DIM}Excluded patterns: package-lock.json, yarn.lock, *.min.js, *.min.css${RESET}`);
   console.log(`${GREEN}All 3 files pass filter.${RESET}`);
 
-  console.log(`\n${BOLD}--- Gemini CLI /code-review ---${RESET}\n`);
-  console.log(`${DIM}[SIM] Gemini CLI not available, using mock response...${RESET}`);
+  console.log(`\n${BOLD}--- Gemini Structured Output Review ---${RESET}\n`);
+  console.log(`${DIM}[SIM] Using mock structured response...${RESET}`);
 
   await new Promise(resolve => setTimeout(resolve, 500));
+
+  const findings = MOCK_FINDINGS;
+  const summary = MOCK_SUMMARY;
 
   console.log(`\n${BOLD}${'='.repeat(60)}${RESET}`);
   console.log(`${BOLD}  Review Results${RESET}`);
   console.log(`${BOLD}${'='.repeat(60)}${RESET}\n`);
 
-  console.log(MOCK_REVIEW_RESULT);
+  console.log(`${BOLD}Summary:${RESET} ${summary}\n`);
 
-  const findings = reviewer.parseFindings(MOCK_REVIEW_RESULT);
-  const hasCritical = reviewer.hasCriticalFindings(MOCK_REVIEW_RESULT);
+  for (const f of findings) {
+    console.log(`${severityColor(f.severity)}${BOLD}[${f.severity}]${RESET} \`${f.file}:${f.line}\``);
+    console.log(`  ${f.description}`);
+    if (f.suggestion) {
+      console.log(`  ${DIM}Suggestion:${RESET}`);
+      for (const line of f.suggestion.split('\n')) {
+        console.log(`    ${GREEN}${line}${RESET}`);
+      }
+    }
+    if (f.rationale) {
+      console.log(`  ${DIM}Rationale: ${f.rationale}${RESET}`);
+    }
+    console.log();
+  }
 
-  console.log(`\n${BOLD}${'='.repeat(60)}${RESET}`);
+  const hasCritical = reviewer.hasCriticalFindings(findings);
+
+  console.log(`${BOLD}${'='.repeat(60)}${RESET}`);
   console.log(`${BOLD}  Findings Summary${RESET}`);
   console.log(`${BOLD}${'='.repeat(60)}${RESET}\n`);
 
@@ -314,8 +308,17 @@ export async function runSimulation(): Promise<ReviewResult> {
   console.log(`${BOLD}  GitLab MR Note Preview${RESET}`);
   console.log(`${BOLD}${'='.repeat(60)}${RESET}\n`);
 
-  const noteBody = `${REVIEW_HEADER}\n\n## Niteni - Code Review\n\n${MOCK_REVIEW_RESULT}${BOT_SIGNATURE}`;
-  console.log(`${DIM}--- Note body (${noteBody.length} chars) ---${RESET}\n`);
+  const sampleNote = findings[0];
+  const emoji = ':rotating_light:';
+  let noteBody = `${REVIEW_HEADER}\n\n`;
+  noteBody += `#### ${emoji} ${sampleNote.severity} \u2014 \`${sampleNote.file}:${sampleNote.line}\`\n\n`;
+  noteBody += `**Issue:** ${sampleNote.description}\n`;
+  if (sampleNote.suggestion) {
+    noteBody += `\n**Suggestion:** ${sampleNote.rationale}\n\`\`\`suggestion\n${sampleNote.suggestion}\n\`\`\`\n`;
+  }
+  noteBody += BOT_SIGNATURE;
+
+  console.log(`${DIM}--- Sample note body (1 of ${findings.length}) ---${RESET}\n`);
   console.log(noteBody);
 
   console.log(`\n${BOLD}${'='.repeat(60)}${RESET}`);
@@ -332,5 +335,5 @@ export async function runSimulation(): Promise<ReviewResult> {
 
   console.log(`\n${DIM}[SIM] No actual API calls were made. This was a simulation.${RESET}\n`);
 
-  return { review: MOCK_REVIEW_RESULT, hasCritical };
+  return { summary, findings, hasCritical };
 }

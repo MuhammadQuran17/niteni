@@ -102,119 +102,52 @@ describe('filterDiff', () => {
   });
 });
 
-describe('parseFindings', () => {
-  it('parses a single finding with all fields', () => {
-    const text = [
-      '### Summary',
-      'Test changes.',
-      '',
-      '### Findings',
-      '',
-      '**[CRITICAL]** `src/app.ts:42`',
-      '> SQL injection vulnerability in user input',
-      '> Rationale: User input should be parameterized',
-      '```suggestion',
-      'db.query("SELECT * FROM users WHERE id = ?", [id]);',
-      '```',
-    ].join('\n');
-
-    const findings = reviewer.parseFindings(text);
-    assert.strictEqual(findings.length, 1);
-    assert.strictEqual(findings[0].severity, 'CRITICAL');
-    assert.strictEqual(findings[0].file, 'src/app.ts');
-    assert.strictEqual(findings[0].line, 42);
-    assert.ok(findings[0].description.includes('SQL injection'));
-    assert.ok(findings[0].suggestion?.includes('db.query'));
-    assert.ok(findings[0].rationale?.includes('parameterized'));
-  });
-
-  it('parses multiple findings', () => {
-    const text = [
-      '### Findings',
-      '',
-      '**[HIGH]** `src/api.ts:10`',
-      '> Missing error handling',
-      '',
-      '---',
-      '',
-      '**[LOW]** `src/utils.ts:5`',
-      '> Variable could be const',
-    ].join('\n');
-
-    const findings = reviewer.parseFindings(text);
-    assert.strictEqual(findings.length, 2);
-    assert.strictEqual(findings[0].severity, 'HIGH');
-    assert.strictEqual(findings[0].file, 'src/api.ts');
-    assert.strictEqual(findings[1].severity, 'LOW');
-    assert.strictEqual(findings[1].file, 'src/utils.ts');
-  });
-
-  it('returns empty array for no findings text', () => {
-    const text = [
-      '### Summary',
-      'Everything looks good.',
-      '',
-      '### Findings',
-      'No significant issues found. The code changes look good.',
-    ].join('\n');
-
-    const findings = reviewer.parseFindings(text);
-    assert.strictEqual(findings.length, 0);
-  });
-
-  it('handles findings without suggestion or rationale', () => {
-    const text = '**CRITICAL** `config.ts:1`\n> Missing validation\n';
-    const findings = reviewer.parseFindings(text);
-    assert.strictEqual(findings.length, 1);
-    assert.strictEqual(findings[0].suggestion, undefined);
-    assert.strictEqual(findings[0].rationale, undefined);
-  });
-
-  it('handles severity without brackets', () => {
-    const text = '**MEDIUM** `src/index.ts:15`\n> Unused import\n';
-    const findings = reviewer.parseFindings(text);
-    assert.strictEqual(findings.length, 1);
-    assert.strictEqual(findings[0].severity, 'MEDIUM');
-  });
-
-  it('defaults line to 0 when not a number', () => {
-    const text = '**HIGH** `src/file.ts:`\n> Bad line number\n';
-    const findings = reviewer.parseFindings(text);
-    assert.strictEqual(findings.length, 1);
-    assert.strictEqual(findings[0].line, 0);
-  });
-});
-
 describe('hasCriticalFindings', () => {
   it('returns true when CRITICAL finding present', () => {
     assert.strictEqual(
-      reviewer.hasCriticalFindings('**[CRITICAL]** `file.ts:1`\n> issue'),
-      true,
-    );
-  });
-
-  it('returns true for CRITICAL without brackets', () => {
-    assert.strictEqual(
-      reviewer.hasCriticalFindings('**CRITICAL** `file.ts:1`\n> issue'),
+      reviewer.hasCriticalFindings([
+        { severity: 'CRITICAL', file: 'file.ts', line: 1, description: 'issue' },
+      ]),
       true,
     );
   });
 
   it('returns false when only non-critical findings', () => {
     assert.strictEqual(
-      reviewer.hasCriticalFindings('**[HIGH]** `file.ts:1`\n> issue'),
+      reviewer.hasCriticalFindings([
+        { severity: 'HIGH', file: 'file.ts', line: 1, description: 'issue' },
+        { severity: 'LOW', file: 'file.ts', line: 2, description: 'minor' },
+      ]),
       false,
     );
   });
 
-  it('returns false for empty text', () => {
-    assert.strictEqual(reviewer.hasCriticalFindings(''), false);
+  it('returns false for empty findings', () => {
+    assert.strictEqual(reviewer.hasCriticalFindings([]), false);
   });
 
-  it('returns false for clean review', () => {
+  it('detects CRITICAL among mixed severities', () => {
     assert.strictEqual(
-      reviewer.hasCriticalFindings('No significant issues found.'),
-      false,
+      reviewer.hasCriticalFindings([
+        { severity: 'LOW', file: 'a.ts', line: 1, description: 'minor' },
+        { severity: 'CRITICAL', file: 'b.ts', line: 5, description: 'vuln' },
+        { severity: 'HIGH', file: 'c.ts', line: 10, description: 'bug' },
+      ]),
+      true,
     );
+  });
+});
+
+describe('review', () => {
+  it('returns empty findings for empty diff', async () => {
+    const result = await reviewer.review('');
+    assert.strictEqual(result.summary, 'No code changes to review.');
+    assert.deepStrictEqual(result.findings, []);
+  });
+
+  it('returns empty findings for whitespace-only diff', async () => {
+    const result = await reviewer.review('   \n  \n  ');
+    assert.strictEqual(result.summary, 'No code changes to review.');
+    assert.deepStrictEqual(result.findings, []);
   });
 });

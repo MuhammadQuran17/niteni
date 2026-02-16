@@ -2,7 +2,7 @@ import { GitLabAPI } from './gitlab-api';
 import { Reviewer } from './reviewer';
 import { config, validate, validateForMR } from './config';
 import { execFileSync } from 'child_process';
-import type { ReviewResult, DiffPosition } from './types';
+import type { ReviewResult, DiffPosition, Finding } from './types';
 
 // Re-export classes and functions
 export { GitLabAPI } from './gitlab-api';
@@ -25,12 +25,39 @@ export type {
   ReviewerOptions,
   FilterOptions,
   Finding,
+  StructuredReviewResponse,
   ReviewResult,
 } from './types';
 
 export const REVIEW_HEADER = '<!-- niteni-review -->';
 
 const BOT_SIGNATURE = '\n\n---\n*Reviewed by [Niteni](https://github.com/denyherianto/niteni) — AI-powered code review powered by [Gemini CLI](https://github.com/gemini-cli-extensions/code-review)*';
+
+function formatFindingsAsMarkdown(summary: string, findings: Finding[]): string {
+  let output = `### Summary\n${summary}\n\n### Findings\n\n`;
+
+  if (findings.length === 0) {
+    output += 'No significant issues found. The code changes look good.\n';
+    return output;
+  }
+
+  for (let i = 0; i < findings.length; i++) {
+    const f = findings[i];
+    output += `**[${f.severity}]** \`${f.file}:${f.line}\`\n`;
+    output += `> ${f.description}\n`;
+    if (f.rationale) {
+      output += `> Rationale: ${f.rationale}\n`;
+    }
+    if (f.suggestion) {
+      output += `\`\`\`suggestion\n${f.suggestion}\n\`\`\`\n`;
+    }
+    if (i < findings.length - 1) {
+      output += '\n---\n\n';
+    }
+  }
+
+  return output;
+}
 
 export async function runMergeRequestReview(): Promise<ReviewResult> {
   const errors = validateForMR();
@@ -74,10 +101,11 @@ export async function runMergeRequestReview(): Promise<ReviewResult> {
 
   if (!diffContent.trim()) {
     console.log('No reviewable changes found after filtering.');
-    return { review: 'No reviewable changes found.', hasCritical: false };
+    return { summary: 'No reviewable changes found.', findings: [], hasCritical: false };
   }
 
-  const reviewResult = await reviewer.review(diffContent);
+  const reviewResponse = await reviewer.review(diffContent);
+  const { summary, findings } = reviewResponse;
 
   if (config.review.postAsNote) {
     // Clean up previous inline discussions and notes
@@ -107,10 +135,9 @@ export async function runMergeRequestReview(): Promise<ReviewResult> {
       console.warn('Could not clean up previous review discussions:', (err as Error).message);
     }
 
-    // Parse findings and post inline comments
-    const findings = reviewer.parseFindings(reviewResult);
+    // Post inline comments from structured findings
     const diffRefs = mr.diff_refs;
-    console.log(`Parsed ${findings.length} finding(s). diff_refs: ${diffRefs ? 'available' : 'missing'}`);
+    console.log(`Found ${findings.length} finding(s). diff_refs: ${diffRefs ? 'available' : 'missing'}`);
 
     if (findings.length > 0) {
       let inlineCount = 0;
@@ -127,19 +154,14 @@ export async function runMergeRequestReview(): Promise<ReviewResult> {
 
         let body = `${REVIEW_HEADER}\n\n`;
         body += `#### ${emoji} ${finding.severity} \u2014 \`${finding.file}:${finding.line}\`\n\n`;
+        body += `**Issue:** ${finding.description}\n`;
 
-        // Extract description without suggestion block and rationale line
-        const descWithoutSuggestion = finding.description
-          .replace(/```suggestion\n[\s\S]*?```/, '')
-          .replace(/>\s*Rationale:.*/, '')
-          .replace(/Rationale:.*/, '')
-          .replace(/---\s*$/, '')
-          .trim();
-        body += `**Issue:** ${descWithoutSuggestion}\n`;
+        if (finding.rationale) {
+          body += `\n**Rationale:** ${finding.rationale}\n`;
+        }
 
         if (finding.suggestion) {
-          const rationale = finding.rationale || 'Applying this suggestion addresses the issue described above.';
-          body += `\n**Suggestion:** ${rationale}\n\`\`\`suggestion\n${finding.suggestion}\`\`\`\n`;
+          body += `\n\`\`\`suggestion\n${finding.suggestion}\n\`\`\`\n`;
         }
 
         // Try inline diff comment first, fall back to general discussion
@@ -179,12 +201,12 @@ export async function runMergeRequestReview(): Promise<ReviewResult> {
     }
   }
 
-  const hasCritical = reviewer.hasCriticalFindings(reviewResult);
+  const hasCritical = reviewer.hasCriticalFindings(findings);
   if (hasCritical) {
     console.warn('CRITICAL issues found in the review!');
   }
 
-  return { review: reviewResult, hasCritical };
+  return { summary, findings, hasCritical };
 }
 
 export async function runDiffReview(): Promise<ReviewResult> {
@@ -224,17 +246,20 @@ export async function runDiffReview(): Promise<ReviewResult> {
 
   if (!diffContent.trim()) {
     console.log('No changes to review.');
-    return { review: 'No changes to review.', hasCritical: false };
+    return { summary: 'No changes to review.', findings: [], hasCritical: false };
   }
 
   console.log(`Diff size: ${diffContent.length} characters`);
   console.log('Running Gemini code review...');
 
-  const reviewResult = await reviewer.review(diffContent);
-  console.log('\n' + reviewResult);
+  const reviewResponse = await reviewer.review(diffContent);
+  const { summary, findings } = reviewResponse;
+
+  console.log('\n' + formatFindingsAsMarkdown(summary, findings));
 
   return {
-    review: reviewResult,
-    hasCritical: reviewer.hasCriticalFindings(reviewResult),
+    summary,
+    findings,
+    hasCritical: reviewer.hasCriticalFindings(findings),
   };
 }
