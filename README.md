@@ -39,16 +39,19 @@ niteni-code-review:
   stage: review
   image: node:20-alpine
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_LABELS =~ /ai_review/
   before_script:
     - apk add --no-cache git curl bash
     # Clone and build Niteni
-    - git clone https://github.com/denyherianto/niteni.git /tmp/niteni
+    - git clone https://github.com/MuhammadQuran17/niteni.git /tmp/niteni
     - cd /tmp/niteni && npm ci && npm run build && npm link
     - cd $CI_PROJECT_DIR
   script:
     - niteni --mode mr
   allow_failure: true
+  variables:
+    REVIEW_FAIL_ON_CRITICAL: "false"
+    REVIEW_EXCLUDE_PATTERNS: "package-lock.json,yarn.lock,composer.lock,*.min.js,*.min.css,*.map"
 ```
 
 > **Note:** Do NOT re-declare `GEMINI_API_KEY` or `GITLAB_TOKEN` in the job `variables:` section — this causes a circular reference. Project-level CI/CD variables are automatically available in all jobs.
