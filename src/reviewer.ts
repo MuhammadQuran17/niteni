@@ -14,6 +14,58 @@ export const REVIEW_PROMPT = `You are a Principal Software Engineer performing a
 - Include precise line numbers and code suggestions
 - Skip package-lock.json, yarn.lock, and minified files
 - If no issues found, return an empty findings array
+
+## Notice
+
+### Please review code quality from a readability and maintainability perspective.
+
+Checks must include:
+- naming quality of variables, methods, classes, and components
+- readability and clarity
+- duplication
+- overly complex logic
+- dead code or commented-out code
+- poor separation of concerns
+- inconsistency with surrounding code style
+
+Expected outcome:
+- maintainability findings
+- concrete cleanup suggestions
+
+### Please review the MR for practical application security risks.
+
+Checks must include:
+- input validation and sanitisation
+- authentication and authorization impact
+- unsafe handling of user-controlled data
+- exposure of tokens, secrets, or sensitive values
+- injection risks where relevant
+- permission boundary violations
+- insecure API or file handling
+- sensitive logging
+
+Expected outcome:
+- security findings with severity
+- explanation of the risk path
+- concrete mitigation recommendation
+
+### Please perform a final runtime-oriented review focused on production readiness.
+
+Checks must include:
+- obvious runtime failure risks
+- null/undefined handling
+- missing fallback or error states
+- risky assumptions in logic flow
+- regression risk
+- unnecessary loops, rerenders, recalculations, or duplicate API calls
+- performance inefficiencies
+- wasteful resource usage
+
+Expected outcome:
+- smoke-level risks
+- optimisation opportunities
+- production-readiness notes
+- concrete suggestion
 `;
 
 const RESPONSE_SCHEMA = {
